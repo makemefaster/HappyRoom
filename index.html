@@ -7,12 +7,42 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        .room-card { transition: all 0.2s; }
+        .room-card { transition: all 0.2s; break-inside: avoid; } /* break-inside prevents cutting rooms in half on paper */
         .room-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .conflict { color: #dc2626; font-weight: bold; background-color: #fee2e2; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; }
         .match { color: #059669; font-weight: bold; background-color: #d1fae5; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; margin-left: 4px; }
         .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 24px; height: 24px; border-radius: 50%; border-left-color: #3b82f6; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-left: 10px;}
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- PRINT STYLES --- */
+        @media print {
+            @page { margin: 1cm; }
+            body { background: white; -webkit-print-color-adjust: exact; }
+            
+            /* Hide these elements when printing */
+            .no-print, 
+            #configSection, 
+            .match, 
+            .conflict, 
+            #scoreSection, 
+            #printBtn { 
+                display: none !important; 
+            }
+
+            /* Adjust layout for print */
+            #roomsContainer { 
+                display: grid; 
+                grid-template-columns: 1fr 1fr; /* 2 columns on paper */
+                gap: 20px; 
+            }
+            .room-card { 
+                box-shadow: none; 
+                border: 2px solid #000; 
+                transform: none !important; 
+            }
+            h1 { font-size: 20pt; text-align: center; margin-bottom: 20px; }
+            p { display: none; } /* Hide subtitle */
+        }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen p-4 md:p-8 font-sans text-slate-800">
@@ -23,7 +53,7 @@
             <p class="text-slate-500 mt-2">Upload Excel data to optimize classroom seating based on variable friend preferences.</p>
         </header>
 
-        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+        <div id="configSection" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
             <h2 class="text-lg font-bold mb-4 flex items-center">
                 <span class="bg-blue-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center text-xs mr-2">1</span>
                 Configuration
@@ -40,13 +70,13 @@
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 mb-1">How many friends can they choose?</label>
                     <select id="friendCount" onchange="updateInstructions()" class="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                        <option value="2" selected>2 Friends</option>
-                        <option value="3">3 Friends</option>
+                        <option value="2">2 Friends</option>
+                        <option value="3" selected>3 Friends</option>
                         <option value="4">4 Friends</option>
                         <option value="5">5 Friends</option>
                     </select>
                     <p class="text-xs text-slate-500 mt-1" id="columnInstruction">
-                        Structure: Col A (Name), B-C (Friends), D (Avoid)
+                        Structure: Col A (Name) | Cols B-D (Friends) | Col E (Avoid)
                     </p>
                 </div>
             </div>
@@ -78,11 +108,19 @@
             <div class="flex justify-between items-end mb-6 border-b border-slate-200 pb-2">
                 <div>
                     <h2 class="text-xl font-bold text-slate-800">Results</h2>
-                    <p class="text-sm text-slate-500">Based on <span id="iterationsDisplay">0</span> simulations</p>
+                    <p class="text-sm text-slate-500 no-print">Based on <span id="iterationsDisplay">0</span> simulations</p>
                 </div>
-                <div class="text-right">
-                    <div class="text-xs text-slate-500 uppercase tracking-wide">Happiness Score</div>
-                    <div id="scoreDisplay" class="text-3xl font-black text-blue-600">0</div>
+                
+                <div class="flex items-center gap-4">
+                    <div id="scoreSection" class="text-right">
+                        <div class="text-xs text-slate-500 uppercase tracking-wide">Happiness Score</div>
+                        <div id="scoreDisplay" class="text-3xl font-black text-blue-600">0</div>
+                    </div>
+
+                    <button id="printBtn" onclick="window.print()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded flex items-center gap-2 shadow">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                        Print Public List
+                    </button>
                 </div>
             </div>
             
@@ -94,16 +132,17 @@
     <script>
         let students = [];
 
-        // UI Helper: Update instructions based on dropdown
         function updateInstructions() {
             const count = parseInt(document.getElementById('friendCount').value);
-            const friendCols = Array.from({length: count}, (_, i) => String.fromCharCode(66 + i)).join('-'); // B-C or B-E
-            const avoidCol = String.fromCharCode(66 + count); // Column after friends
+            const friendCols = Array.from({length: count}, (_, i) => String.fromCharCode(66 + i)).join('-'); 
+            const avoidCol = String.fromCharCode(66 + count); 
             document.getElementById('columnInstruction').innerText = 
                 `Structure: Col A (Name) | Cols ${friendCols} (Friends) | Col ${avoidCol} (Avoid)`;
         }
 
-        // UI Helper: Show filename
+        // Initialize instructions on load
+        window.onload = updateInstructions;
+
         document.getElementById('fileInput').addEventListener('change', function(e) {
             if(e.target.files[0]) {
                 const nameDiv = document.getElementById('fileName');
@@ -130,11 +169,9 @@
                 return;
             }
 
-            // Show Loading State
             btnText.innerText = "Optimizing...";
             loader.classList.remove('hidden');
             
-            // Allow UI to update before heavy processing
             setTimeout(async () => {
                 try {
                     const file = fileInput.files[0];
@@ -143,15 +180,11 @@
                     const sheet = workbook.Sheets[workbook.SheetNames[0]];
                     const jsonData = XLSX.utils.sheet_to_json(sheet, {header: 1});
 
-                    // Parse Students based on dynamic friend limit
-                    // Row Structure: Name (0) | Friends (1 to limit) | Avoid (limit + 1)
                     students = jsonData.filter(row => row[0]).map(row => {
                         const likes = [];
-                        // Loop through the friend columns
                         for(let i = 1; i <= friendLimit; i++) {
                             if(row[i]) likes.push(row[i]);
                         }
-                        
                         return {
                             name: row[0],
                             likes: likes,
@@ -159,20 +192,18 @@
                         };
                     });
 
-                    // Validation
                     const totalCapacity = sizes.reduce((a, b) => a + b, 0);
                     if (totalCapacity < students.length) {
                         alert(`Error: ${students.length} students but only ${totalCapacity} spaces.`);
                         throw new Error("Capacity");
                     }
 
-                    // Run Algorithm
                     const bestAllocation = optimizeRooms(students, sizes);
                     renderResults(bestAllocation);
 
                 } catch (e) {
                     console.error(e);
-                    if(e.message !== "Capacity") alert("An error occurred parsing the file. Please check the column format.");
+                    if(e.message !== "Capacity") alert("An error occurred parsing the file. Please check column format.");
                 } finally {
                     btnText.innerText = "Generate Allocation";
                     loader.classList.add('hidden');
@@ -192,11 +223,9 @@
                 let currentRooms = initializeRooms(studentList, roomSizes);
                 let currentScore = calculateScore(currentRooms);
 
-                // Optimization Loop (Stochastic Hill Climbing)
                 for (let i = 0; i < swapsPerAttempt; i++) {
                     const newRooms = JSON.parse(JSON.stringify(currentRooms));
                     
-                    // Pick two distinct random rooms
                     const r1Idx = Math.floor(Math.random() * newRooms.length);
                     let r2Idx = Math.floor(Math.random() * newRooms.length);
                     while(r1Idx === r2Idx) r2Idx = Math.floor(Math.random() * newRooms.length);
@@ -204,17 +233,11 @@
                     const r1 = newRooms[r1Idx];
                     const r2 = newRooms[r2Idx];
 
-                    // Determine Swap Type
-                    // 1. Move from R1 to R2 (if R2 has space)
-                    // 2. Swap student between R1 and R2
-                    
                     if (r1.occupants.length > 0 && r2.occupants.length < r2.capacity && Math.random() > 0.5) {
-                        // Move
                         const sIdx = Math.floor(Math.random() * r1.occupants.length);
                         const student = r1.occupants.splice(sIdx, 1)[0];
                         r2.occupants.push(student);
                     } else if (r1.occupants.length > 0 && r2.occupants.length > 0) {
-                        // Swap
                         const s1Idx = Math.floor(Math.random() * r1.occupants.length);
                         const s2Idx = Math.floor(Math.random() * r2.occupants.length);
                         
@@ -224,7 +247,6 @@
                     }
 
                     const newScore = calculateScore(newRooms);
-                    // Accept if better
                     if (newScore > currentScore) {
                         currentRooms = newRooms;
                         currentScore = newScore;
@@ -259,14 +281,12 @@
                 const namesInRoom = occupants.map(s => s.name.toLowerCase().trim());
 
                 occupants.forEach(student => {
-                    // +10 for every friend in the room
                     student.likes.forEach(friend => {
                         if (friend && namesInRoom.includes(friend.toLowerCase().trim())) {
                             score += 10;
                         }
                     });
 
-                    // -500 for an enemy (Make this penalty massive to strictly enforce it)
                     if (student.dislike && namesInRoom.includes(student.dislike.toLowerCase().trim())) {
                         score -= 500;
                     }
@@ -288,7 +308,6 @@
                 const div = document.createElement('div');
                 div.className = 'bg-white rounded-xl shadow border border-slate-200 overflow-hidden room-card flex flex-col h-full';
                 
-                // Room Header
                 const isFull = room.occupants.length === room.capacity;
                 div.innerHTML = `
                     <div class="bg-slate-50 px-4 py-3 border-b border-slate-100 flex justify-between items-center">
@@ -299,7 +318,6 @@
                     </div>
                 `;
 
-                // Student List
                 const ul = document.createElement('ul');
                 ul.className = 'p-4 space-y-3 flex-grow';
                 
@@ -308,14 +326,12 @@
                 room.occupants.forEach(student => {
                     let matchesHtml = '';
                     
-                    // Generate Hearts
                     student.likes.forEach(l => {
                         if (l && namesInRoom.includes(l.toLowerCase().trim())) {
                             matchesHtml += `<span class="match" title="With friend: ${l}">♥ ${l}</span>`;
                         }
                     });
 
-                    // Generate Conflict Warning
                     if (student.dislike && namesInRoom.includes(student.dislike.toLowerCase().trim())) {
                         matchesHtml += `<span class="conflict" title="Conflict with: ${student.dislike}">⚠ ${student.dislike}</span>`;
                     }
